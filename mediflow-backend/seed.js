@@ -22,10 +22,22 @@ const seedDatabase = async () => {
     console.log('Cleared existing collections...');
 
     // 1. Create Department
-    const department = await Department.create({
-      name: 'Cardiology',
-      description: 'Heart and cardiovascular care'
-    });
+       // 1. Create Departments
+    const departmentsData = [
+      { name: 'Cardiology', description: 'Heart and cardiovascular care' },
+      { name: 'Neurology', description: 'Diagnosis and treatment of nervous system disorders' },
+      { name: 'Orthopedics', description: 'Bone, joint, and musculoskeletal care' },
+      { name: 'Pediatrics', description: 'Medical care for infants, children, and adolescents' },
+      { name: 'Dermatology', description: 'Skin, hair, and nail conditions' },
+      { name: 'ENT', description: 'Ear, nose, and throat treatment' },
+      { name: 'Gastroenterology', description: 'Digestive system and gastrointestinal disorders' },
+      { name: 'Pulmonology', description: 'Respiratory system and lung disease care' },
+      { name: 'Nephrology', description: 'Kidney care and renal disease treatment' },
+      { name: 'Psychiatry', description: 'Mental health diagnosis and treatment' }
+    ];
+
+    const departments = await Department.insertMany(departmentsData);
+    const department = departments[0]; // Cardiology — used below for the seeded doctor
 
     // 2. Create Admin Account
     await User.create({
@@ -77,7 +89,7 @@ const seedDatabase = async () => {
 
     console.log('✅ Database seeded successfully!');
     console.log('-----------------------------------');
-    console.log('Admin:   admin@mediflow.com   / Admin@123');
+    console.log('Admin:   admin@mediflow.com   / 0');
     console.log('Doctor:  doctor@mediflow.com  / Doctor@123');
     console.log('Patient: patient@mediflow.com / Patient@123');
     console.log('-----------------------------------');
