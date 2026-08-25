@@ -3,6 +3,7 @@ const Appointment = require('../models/Appointment');
 const Prescription = require('../models/Prescription');
 const Patient = require('../models/Patient');
 const asyncHandler = require('../utils/asyncHandler');
+const { TIME_SLOTS, getUTCDateBoundaries } = require('./appointmentController');   // ← ADD THIS LINE
 
 // Helper to resolve doctor profile by logged in userId
 const getDoctorByUserId = async (userId, res) => {
@@ -12,6 +13,38 @@ const getDoctorByUserId = async (userId, res) => {
     throw new Error('Doctor profile not found for this logged-in user');
   }
   return doctor;
+};
+
+
+// Recalculates today's live queue for a doctor and pushes updates to each waiting patient
+const recalcAndEmitQueue = async (doctorId, io) => {
+  if (!io) return;
+
+  const { startOfDay, endOfDay } = getUTCDateBoundaries(new Date());
+
+  const todaysQueue = await Appointment.find({
+    doctor: doctorId,
+    appointmentDate: { $gte: startOfDay, $lte: endOfDay },
+    status: { $in: ['Scheduled', 'In-Progress'] }
+  }).populate('patient');
+
+  todaysQueue.sort(
+    (a, b) => TIME_SLOTS.indexOf(a.timeSlot) - TIME_SLOTS.indexOf(b.timeSlot)
+  );
+
+  todaysQueue.forEach((appt, index) => {
+    const patientUserId = appt.patient?.userId?._id || appt.patient?.userId;
+    if (!patientUserId) return;
+
+    io.to(patientUserId.toString()).emit('queue_position_update', {
+      appointmentId: appt._id,
+      patientsAhead: index,
+      message:
+        index === 0
+          ? "You're next in the queue!"
+          : `${index} patient${index > 1 ? 's' : ''} ahead of you`
+    });
+  });
 };
 
 // @desc    Get Doctor Profile
@@ -83,7 +116,7 @@ exports.updateAppointmentStatus = asyncHandler(async (req, res) => {
 
   const patientUserId = appointment.patient?.userId?._id || appointment.patient?.userId;
 
-  const io = req.app.get('io');
+   const io = req.app.get('io');
   if (io && patientUserId) {
     io.to(patientUserId.toString()).emit('appointment_status_update', {
       appointmentId: appointment._id,
@@ -92,8 +125,12 @@ exports.updateAppointmentStatus = asyncHandler(async (req, res) => {
     });
   }
 
+  await recalcAndEmitQueue(appointment.doctor, io);
+
   res.json({ success: true, message: `Appointment status updated to ${status}`, data: appointment });
 });
+
+// @desc    Add Prescription & Treatment Notes
 
 // @desc    Add Prescription & Treatment Notes
 // @route   POST /api/doctor/prescriptions
@@ -137,8 +174,12 @@ exports.addPrescription = asyncHandler(async (req, res) => {
     });
   }
 
+  await recalcAndEmitQueue(appointment.doctor, io);
+
   res.status(201).json({ success: true, message: 'Prescription added & consultation completed', data: prescription });
 });
+
+// @desc    Get Assigned Patient History
 
 // @desc    Get Assigned Patient History
 // @route   GET /api/doctor/patient-history/:patientId

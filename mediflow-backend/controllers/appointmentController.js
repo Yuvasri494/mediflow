@@ -100,6 +100,38 @@ exports.bookAppointment = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get patient's position in today's queue for their doctor
+// @route   GET /api/appointments/queue-position/:appointmentId
+// @access  Private (Patient)
+exports.getQueuePosition = asyncHandler(async (req, res) => {
+  const { appointmentId } = req.params;
+
+  const myAppointment = await Appointment.findById(appointmentId);
+  if (!myAppointment) {
+    res.status(404);
+    throw new Error('Appointment not found');
+  }
+
+  const { startOfDay, endOfDay } = getUTCDateBoundaries(myAppointment.appointmentDate);
+  const myTimeIndex = TIME_SLOTS.indexOf(myAppointment.timeSlot);
+
+  const appointmentsAhead = await Appointment.countDocuments({
+    doctor: myAppointment.doctor,
+    appointmentDate: { $gte: startOfDay, $lte: endOfDay },
+    status: 'Scheduled',
+    _id: { $ne: myAppointment._id },
+    timeSlot: { $in: TIME_SLOTS.slice(0, myTimeIndex) }
+  });
+
+  res.json({
+    success: true,
+    data: {
+      queuePosition: appointmentsAhead + 1,
+      patientsAhead: appointmentsAhead
+    }
+  });
+});
+
 // @desc    Get patient's appointments
 // @route   GET /api/appointments/my-appointments
 // @access  Private (Patient)
@@ -165,3 +197,6 @@ exports.cancelAppointment = asyncHandler(async (req, res) => {
 
   res.json({ success: true, message: 'Appointment cancelled successfully', data: appointment });
 });
+// Exported for reuse in doctorController (queue calculations)
+exports.TIME_SLOTS = TIME_SLOTS;
+exports.getUTCDateBoundaries = getUTCDateBoundaries;

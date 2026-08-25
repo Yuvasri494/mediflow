@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { getMyAppointmentsApi, cancelAppointmentApi } from '../../services/appointmentService';
 import { useToast } from '../../context/ToastContext';
 import API from '../../services/api';
+import { getSocket } from '../../services/socket';
+import { useAuth } from '../../context/AuthContext';
+import { getMyAppointmentsApi, cancelAppointmentApi, getQueuePositionApi } from '../../services/appointmentService';
 
 const MyAppointments = () => {
   const [appointments, setAppointments] = useState([]);
@@ -11,30 +13,68 @@ const MyAppointments = () => {
   const [reportTitle, setReportTitle] = useState('');
   const { showToast } = useToast();
 
-  const fetchAppointments = async () => {
-    try {
-      setLoading(true);
-      const res = await getMyAppointmentsApi();
-      
-      // Safely extract array payload across API formats
-      const dataArray = Array.isArray(res.data?.data)
-        ? res.data.data
-        : Array.isArray(res.data)
-        ? res.data
-        : [];
+  const { user } = useAuth();
+const [queueInfo, setQueueInfo] = useState({});
 
-      setAppointments(dataArray);
-    } catch (err) {
-      showToast('Failed to load your appointments', 'error');
-      setAppointments([]); // Always fallback to array on failure
-    } finally {
-      setLoading(false);
-    }
+useEffect(() => {
+  if (!user?._id) return;
+
+  const socket = getSocket(user._id);
+
+  socket.on('queue_position_update', (data) => {
+    setQueueInfo((prev) => ({ ...prev, [data.appointmentId]: data }));
+  });
+
+  return () => {
+    socket.off('queue_position_update');
   };
+}, [user]);
 
-  useEffect(() => {
-    fetchAppointments();
-  }, []);
+const fetchAppointments = async () => {
+  try {
+    setLoading(true);
+    const res = await getMyAppointmentsApi();
+
+    const dataArray = Array.isArray(res.data?.data)
+      ? res.data.data
+      : Array.isArray(res.data)
+      ? res.data
+      : [];
+
+    setAppointments(dataArray);
+
+    // Fetch initial queue position for each active appointment
+    dataArray.forEach((app) => {
+      if (app.status === 'Scheduled' || app.status === 'In-Progress') {
+        getQueuePositionApi(app._id)
+          .then((res) => {
+            const { patientsAhead } = res.data;
+            setQueueInfo((prev) => ({
+              ...prev,
+              [app._id]: {
+                appointmentId: app._id,
+                patientsAhead,
+                message:
+                  patientsAhead === 0
+                    ? "You're next in the queue!"
+                    : `${patientsAhead} patient${patientsAhead > 1 ? 's' : ''} ahead of you`
+              }
+            }));
+          })
+          .catch(() => {}); // silently skip if this one fails, don't block the page
+      }
+    });
+  } catch (err) {
+    showToast('Failed to load your appointments', 'error');
+    setAppointments([]);
+  } finally {
+    setLoading(false);
+  }
+};
+
+useEffect(() => {
+  fetchAppointments();
+}, []);
 
   const handleCancel = async (id) => {
     try {
@@ -113,6 +153,11 @@ const MyAppointments = () => {
                   {app.status}
                 </span>
               </div>
+              {(app.status === 'Scheduled' || app.status === 'In-Progress') && queueInfo[app._id] && (
+  <p className="text-xs text-blue-600 font-semibold mt-1">
+    🔔 {queueInfo[app._id].message}
+  </p>
+)}
 
               <div className="text-xs space-y-1 text-slate-600 bg-slate-50 p-3 rounded-lg">
                 <p><span className="font-semibold text-slate-700">Date:</span> {new Date(app.appointmentDate || app.date).toLocaleDateString()}</p>

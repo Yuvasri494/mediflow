@@ -1,10 +1,7 @@
 import { useEffect } from 'react';
-import { io } from 'socket.io-client';
+import { getSocket } from '../services/socket';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-
-// Matches your backend URL
-const SOCKET_URL = 'http://localhost:5000';
 
 const RealTimeNotifications = () => {
   const { user } = useAuth();
@@ -13,25 +10,21 @@ const RealTimeNotifications = () => {
   useEffect(() => {
     if (!user || !user._id) return;
 
-    // 1. Connect to backend
-    const socket = io(SOCKET_URL);
+    // 1. Get shared socket connection
+    const socket = getSocket(user._id);
 
-    // 2. Join private room using User ID
-    socket.emit('join_user_room', user._id);
-
-    // 3. Listen for targeted status updates
+    // 2. Listen for targeted status updates
     socket.on('appointment_status_update', (data) => {
       showToast(data.message, 'info');
-      // Optional: If on the Appointments page, you could trigger a refetch here!
     });
 
-    // Cleanup on unmount
+    // Cleanup: remove this listener only (don't kill the shared connection)
     return () => {
-      socket.disconnect();
+      socket.off('appointment_status_update');
     };
   }, [user]);
 
-  return null; // Invisible component
+  return null;
 };
 
 export default RealTimeNotifications;

@@ -11,3 +11,5 @@ export const getMyAppointmentsApi = () =>
 
 export const cancelAppointmentApi = (id) =>
   API.patch(`/appointments/${id}/cancel`, {}).then(res => res.data);
+export const getQueuePositionApi = (appointmentId) =>
+  API.get(`/appointments/queue-position/${appointmentId}`).then(res => res.data);
